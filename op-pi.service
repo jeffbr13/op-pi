@@ -1,0 +1,12 @@
+[Unit]
+Description=Displayotron interface for OP-1 backup/MIDI
+After=multi-user.target
+
+[Service]
+Type=simple
+User=root
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/bin/python3 /opt/op-pi/main.py
+
+[Install]
+WantedBy=multi-user.target
