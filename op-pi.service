@@ -1,6 +1,5 @@
 [Unit]
 Description=Displayotron interface for OP-1 backup/MIDI
-After=multi-user.target
 
 [Service]
 Type=simple
