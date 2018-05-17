@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -143,6 +144,71 @@ class BackupMenuOption(MenuOption):
             menu.write_row(2, '< Return')
 
 
+class MIDIHostMenuOption(MenuOption):
+    class State(Enum):
+        UNCONNECTED = 0
+        CONNECTED = 1
+
+    @classmethod
+    def build_aconnect_client_dict(cls, aconnect_output):
+        client_strs = aconnect_output.strip().split('client ')[1:]
+        ports = {}
+        for client_str in client_strs:
+            split = client_str.strip().split('\n')
+            name, port_strs = split[0], split[1:]
+            match = re.match(r"(?P<number>\d+): '(?P<name>[^']+)'", name)
+            client_number = match.group('number')
+            for port_str in port_strs:
+                match = re.match(r"(?P<number>\d+) '(?P<name>[^']+)'", port_str.strip())
+                port_number = match.group('number')
+                port_name = match.group('name')
+                ports['%s:%s' % (client_number, port_number)] = port_name.strip()
+        return ports
+
+    @classmethod
+    def get_aconnect_inputs(cls):
+        aconnect_output = subprocess.run(
+            ['aconnect', '--input'],
+            stdout=subprocess.PIPE,
+        ).stdout.decode()
+        return cls.build_aconnect_client_dict(
+            aconnect_output
+        )
+
+    @classmethod
+    def get_aconnect_outputs(cls):
+        aconnect_output = subprocess.run(
+            ['aconnect', '--output'],
+            stdout=subprocess.PIPE,
+        ).stdout.decode()
+        return cls.build_aconnect_client_dict(
+            aconnect_output
+        )
+
+    def __init__(self, in_port_name, in_port, out_port_name, out_port):
+        self.state = self.State.UNCONNECTED
+        self.in_port_name = in_port_name
+        self.in_port = in_port
+        self.out_port_name = out_port_name
+        self.out_port = out_port
+        super().__init__()
+
+    def begin(self):
+        backlight.rgb(180, 255, 120)    # green
+
+    def redraw(self, menu):
+        if self.state == self.State.UNCONNECTED:
+            subprocess.run(
+                ['aconnect', self.in_port, self.out_port],
+                stdout=subprocess.PIPE
+            )
+            self.state = self.State.CONNECTED
+        elif self.state == self.State.CONNECTED:
+            menu.write_row(0, self.in_port_name)
+            menu.write_row(1, 'connected to')
+            menu.write_row(2, self.out_port_name)
+
+
 class PowerOffMenuOption(MenuOption):
     def redraw(self, menu):
         menu.clear_row(0)
@@ -158,6 +224,9 @@ class PowerOffMenuOption(MenuOption):
         subprocess.run('shutdown -h now', shell=True)
 
 
+MIDI_INPUTS = MIDIHostMenuOption.get_aconnect_inputs()
+MIDI_OUTPUTS = MIDIHostMenuOption.get_aconnect_outputs()
+
 MENU = Menu(
     structure={
         'Backup All': BackupMenuOption(),
@@ -170,7 +239,13 @@ MENU = Menu(
         #     'Side A': ...,
         #     'Side B': ...,
         # },
-        # 'Host MIDI': HostMidiMenuOption(),
+        'MIDI Host': {
+            in_name: {
+                out_name: MIDIHostMenuOption(in_name, in_port, out_name, out_port)
+                for out_port, out_name in MIDI_OUTPUTS.items()
+            }
+            for in_port, in_name in MIDI_INPUTS.items()
+        },
         'Power Off': PowerOffMenuOption(),
     },
     lcd=lcd,
@@ -180,6 +255,6 @@ MENU = Menu(
 if __name__ == '__main__':
     backlight.rgb(255, 255, 255)
     nav.bind_defaults(MENU)
-    while 1:
+    while True:
         MENU.redraw()
         time.sleep(0.05)
